@@ -295,7 +295,9 @@ def calc_metrics(sub: pd.DataFrame, p_norm_mw: float) -> dict:
     ss_res = float(np.sum((x - y) ** 2))
     ss_tot = float(np.sum((x - x.mean()) ** 2))
     r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else np.nan
-    corr = float(np.corrcoef(x, y)[0, 1]) if n >= 2 else np.nan
+    corr = np.nan
+    if n >= 2 and float(np.nanstd(x)) > 0 and float(np.nanstd(y)) > 0:
+        corr = float(np.corrcoef(x, y)[0, 1])
     interval_h = infer_interval_hours(sub['valid_time'])
     energy = float(np.nansum(err) * interval_h) if np.isfinite(interval_h) else np.nan
     abs_energy = float(np.nansum(abs_err) * interval_h) if np.isfinite(interval_h) else np.nan
@@ -737,7 +739,7 @@ def chapter4_markdown(time_summary: pd.DataFrame, ranking_results: dict[str, pd.
 - `comparison_results/controlled_comparison/maintenance_controlled_summary.csv`
 - `comparison_results/figures/02_maintenance_effect_by_month.png`
 
-在 `not_curtailed` 条件下，固定 `candidate_power_col` 与 `enable_blockage` 后，共比较 {int(maint_focus['total_combinations'])} 个 overall 组合；其中 `nRMSE` 改善的组合占比为 {maint_focus['improved_ratio']:.2%}，平均改善幅度为 {maint_focus['mean_improvement_pct']:.2f}% ，中位改善幅度为 {maint_focus['median_improvement_pct']:.2f}% 。这说明维护状态修正并非对所有候选口径都带来同方向影响，但在共同样本与相同 blockage 设置下，运行状态一致性处理会实质改变评价结果。
+在 `not_curtailed` 条件下，固定 `candidate_power_col` 与 `enable_blockage` 后，共比较 {int(maint_focus['total_combinations'])} 个 overall 组合；其中 `nRMSE` 改善的组合占比为 {maint_focus['improved_ratio']:.2%}，平均改善幅度为 {maint_focus['mean_improvement_pct']:.2f}% ，中位改善幅度为 {maint_focus['median_improvement_pct']:.2f}% 。就当前共同样本而言，overall 层面的误差改善在候选组合上具有一致方向，但月度改善幅度仍存在波动，因此维护修正的收益更适合被解释为“评价对象对齐”带来的稳定影响，而非新的物理建模增益。
 
 月度结果进一步表明，维护修正的收益存在明显时间波动，并与维护台数变化同步出现起伏（见 `02_maintenance_effect_by_month.png`）。因此，维护状态修正更适合被解释为“保证模型计算对象与实测统计对象一致”的数据一致性步骤，而不应被表述为新的尾流物理机制。
 
