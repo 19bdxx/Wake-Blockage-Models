@@ -263,8 +263,11 @@ def compute_wind_speed_summary(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def pair_frame(df: pd.DataFrame, pair: PairSpec) -> pd.DataFrame:
+def pair_frame(df: pd.DataFrame, pair: PairSpec, extra_cols: list[str] | None = None) -> pd.DataFrame:
     cols = ["valid_time", "month", "wind_direction", "measured_ws", "actual_power_mw", pair.ws_col, pair.power_col]
+    if extra_cols:
+        cols.extend(extra_cols)
+    cols = list(dict.fromkeys(cols))
     sub = df[cols].dropna().copy()
     sub["ws_error"] = sub[pair.ws_col] - sub["measured_ws"]
     sub["abs_ws_error"] = sub["ws_error"].abs()
@@ -363,7 +366,7 @@ def compute_monthly_bias(df: pd.DataFrame, pairs: list[PairSpec]) -> pd.DataFram
 def compute_conditional_diagnostics(df: pd.DataFrame, pairs: list[PairSpec], group_col: str, group_label: str) -> pd.DataFrame:
     rows = []
     for pair in pairs:
-        sub = pair_frame(df, pair)
+        sub = pair_frame(df, pair, extra_cols=[group_col])
         for value, group in sub.groupby(group_col, observed=False):
             if pd.isna(value):
                 continue
