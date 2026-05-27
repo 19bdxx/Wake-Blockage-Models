@@ -32,7 +32,7 @@ REPORT_PATH = OUT_DIR / "wind_speed_diagnostics_report.md"
 WIND_SPEED_BINS = [0, 3, 5, 7, 9, 11, 13, np.inf]
 WIND_SPEED_LABELS = ["0-3", "3-5", "5-7", "7-9", "9-11", "11-13", "13+"]
 WIND_DIRECTION_BINS = np.arange(0, 361, 30)
-WIND_DIRECTION_LABELS = [f"{int(WIND_DIRECTION_BINS[i])}-{int(WIND_DIRECTION_BINS[i + 1])}" for i in range(len(WIND_DIRECTION_BINS) - 1)]
+WIND_DIRECTION_LABELS = [f"{WIND_DIRECTION_BINS[i]}-{WIND_DIRECTION_BINS[i + 1]}" for i in range(len(WIND_DIRECTION_BINS) - 1)]
 GOOD_MATCH_POWER_SCALE_MW = 20.0
 
 
@@ -130,11 +130,11 @@ def available_station_ws_cols(df: pd.DataFrame) -> list[str]:
 
 def representative_pairs() -> list[PairSpec]:
     ranking = pd.read_csv(REPO_DIR / "comparison_results" / "single_experiment_evaluation" / "ranking_with_maintenance_overall.csv", encoding="utf-8-sig")
-    ranking = ranking[(ranking["scope_name"] == "not_curtailed") & (ranking["enable_blockage"] == True)].sort_values("nRMSE")
+    ranking = ranking[(ranking["scope_name"] == "not_curtailed") & ranking["enable_blockage"]].sort_values("nRMSE")
     strict_power_col = str(ranking.iloc[0]["candidate_power_col"])
 
     robust = pd.read_csv(REPO_DIR / "comparison_results" / "candidate_analysis" / "robust_candidate_selection.csv", encoding="utf-8-sig")
-    robust = robust[robust["enable_blockage"] == True].sort_values("stability_score")
+    robust = robust[robust["enable_blockage"]].sort_values("stability_score")
     robust_power_col = str(robust.iloc[0]["candidate_power_col"])
 
     pair_defs = [
@@ -617,10 +617,10 @@ def build_report(
     cases_df: pd.DataFrame,
     pairs: list[PairSpec],
 ) -> str:
-    summary_focus = summary_df[(summary_df["scope_name"] == "not_curtailed") & (summary_df["enable_blockage"] == True)].copy()
+    summary_focus = summary_df[(summary_df["scope_name"] == "not_curtailed") & summary_df["enable_blockage"]].copy()
     met_row = summary_focus[summary_focus["ws_col"] == "wind_speed"].iloc[0]
     model_best_row = summary_focus[summary_focus["source_group"] != "meteorological_input"].sort_values("rmse_mps").iloc[0]
-    blockage_off_best = summary_df[(summary_df["scope_name"] == "not_curtailed") & (summary_df["enable_blockage"] == False) & (summary_df["source_group"] != "meteorological_input")].sort_values("rmse_mps").iloc[0]
+    blockage_off_best = summary_df[(summary_df["scope_name"] == "not_curtailed") & (~summary_df["enable_blockage"]) & (summary_df["source_group"] != "meteorological_input")].sort_values("rmse_mps").iloc[0]
 
     overall_rel = relationship_df[relationship_df["summary_level"] == "overall"].copy()
     strict_row = overall_rel[overall_rel["source_role"] == "chapter4_best"].iloc[0]
