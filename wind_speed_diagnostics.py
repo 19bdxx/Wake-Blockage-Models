@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,8 +32,11 @@ WIND_SPEED_BINS = [0, 3, 5, 7, 9, 11, 13, np.inf]
 WIND_SPEED_LABELS = ["0-3", "3-5", "5-7", "7-9", "9-11", "11-13", "13+"]
 WIND_DIRECTION_BINS = np.arange(0, 361, 30)
 WIND_DIRECTION_LABELS = [f"{WIND_DIRECTION_BINS[i]}-{WIND_DIRECTION_BINS[i + 1]}" for i in range(len(WIND_DIRECTION_BINS) - 1)]
-# 20 MW keeps the “good match” case score on the same rough scale as m/s wind-speed
-# error, so the selector prefers timestamps that are jointly small in both dimensions.
+MAX_WS_ERROR_QUANTILE_BINS = 5
+RESIDUAL_CASE_WS_ERROR_QUANTILE = 0.25
+# 20 MW is close to the central tendency of absolute power error in the main sample,
+# so dividing by this value puts MW residuals on a similar screening scale as m/s
+# wind-speed residuals when selecting the "good match" timestamp.
 GOOD_MATCH_POWER_SCALE_MW = 20.0
 
 
@@ -49,6 +51,13 @@ class PairSpec:
 
 def ensure_dirs() -> None:
     FIG_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def compute_rmse(errors: pd.Series | np.ndarray) -> float:
+    arr = pd.Series(errors).dropna().to_numpy(dtype=float)
+    if arr.size == 0:
+        return float("nan")
+    return float(np.sqrt(np.mean(arr**2)))
 
 
 def wind_source_metadata(ws_col: str) -> dict[str, object]:
@@ -255,7 +264,7 @@ def compute_wind_speed_summary(df: pd.DataFrame) -> pd.DataFrame:
                         "n": int(len(sub)),
                         "bias_mps": float(err.mean()),
                         "mae_mps": float(err.abs().mean()),
-                        "rmse_mps": float(np.sqrt(np.mean(err**2))),
+                        "rmse_mps": compute_rmse(err),
                         "corr": float(sub[ws_col].corr(sub["measured_ws"])),
                     }
                 )
@@ -296,10 +305,10 @@ def compute_relationship_summary(df: pd.DataFrame, pairs: list[PairSpec]) -> pd.
                 "n": int(len(sub)),
                 "ws_bias_mps": float(sub["ws_error"].mean()),
                 "ws_mae_mps": float(sub["abs_ws_error"].mean()),
-                "ws_rmse_mps": float(np.sqrt(np.mean(sub["ws_error"] ** 2))),
+                "ws_rmse_mps": compute_rmse(sub["ws_error"]),
                 "power_bias_mw": float(sub["power_error_mw"].mean()),
                 "power_mae_mw": float(sub["abs_power_error_mw"].mean()),
-                "power_rmse_mw": float(np.sqrt(np.mean(sub["power_error_mw"] ** 2))),
+                "power_rmse_mw": compute_rmse(sub["power_error_mw"]),
                 "corr_signed": float(sub["ws_error"].corr(sub["power_error_mw"])),
                 "corr_abs": float(sub["abs_ws_error"].corr(sub["abs_power_error_mw"])),
                 "same_sign_ratio": float(same_sign_ratio),
@@ -308,7 +317,7 @@ def compute_relationship_summary(df: pd.DataFrame, pairs: list[PairSpec]) -> pd.
                 "mean_abs_power_error_mw": np.nan,
             }
         )
-        q_bin_count = min(5, int(sub["abs_ws_error"].nunique()))
+        q_bin_count = min(MAX_WS_ERROR_QUANTILE_BINS, int(sub["abs_ws_error"].nunique()))
         if q_bin_count >= 2:
             q_labels = [f"Q{i + 1}" for i in range(q_bin_count)]
             sub["abs_ws_error_quintile"] = pd.qcut(sub["abs_ws_error"], q=q_bin_count, labels=q_labels, duplicates="drop")
@@ -326,10 +335,10 @@ def compute_relationship_summary(df: pd.DataFrame, pairs: list[PairSpec]) -> pd.
                         "n": int(len(q_group)),
                         "ws_bias_mps": float(q_group["ws_error"].mean()),
                         "ws_mae_mps": float(q_group["abs_ws_error"].mean()),
-                        "ws_rmse_mps": float(np.sqrt(np.mean(q_group["ws_error"] ** 2))),
+                        "ws_rmse_mps": compute_rmse(q_group["ws_error"]),
                         "power_bias_mw": float(q_group["power_error_mw"].mean()),
                         "power_mae_mw": float(q_group["abs_power_error_mw"].mean()),
-                        "power_rmse_mw": float(np.sqrt(np.mean(q_group["power_error_mw"] ** 2))),
+                        "power_rmse_mw": compute_rmse(q_group["power_error_mw"]),
                         "corr_signed": float(q_group["ws_error"].corr(q_group["power_error_mw"])) if len(q_group) > 1 else np.nan,
                         "corr_abs": float(q_group["abs_ws_error"].corr(q_group["abs_power_error_mw"])) if len(q_group) > 1 else np.nan,
                         "same_sign_ratio": float((((q_group["ws_error"] >= 0) & (q_group["power_error_mw"] >= 0)) | ((q_group["ws_error"] < 0) & (q_group["power_error_mw"] < 0))).mean()),
@@ -357,10 +366,10 @@ def compute_monthly_bias(df: pd.DataFrame, pairs: list[PairSpec]) -> pd.DataFram
                     "n": int(len(group)),
                     "ws_bias_mps": float(group["ws_error"].mean()),
                     "ws_mae_mps": float(group["abs_ws_error"].mean()),
-                    "ws_rmse_mps": float(np.sqrt(np.mean(group["ws_error"] ** 2))),
+                    "ws_rmse_mps": compute_rmse(group["ws_error"]),
                     "power_bias_mw": float(group["power_error_mw"].mean()),
                     "power_mae_mw": float(group["abs_power_error_mw"].mean()),
-                    "power_rmse_mw": float(np.sqrt(np.mean(group["power_error_mw"] ** 2))),
+                    "power_rmse_mw": compute_rmse(group["power_error_mw"]),
                     "corr_ws_vs_power_error": float(group["ws_error"].corr(group["power_error_mw"])) if len(group) > 1 else np.nan,
                 }
             )
@@ -386,10 +395,10 @@ def compute_conditional_diagnostics(df: pd.DataFrame, pairs: list[PairSpec], gro
                     "n": int(len(group)),
                     "ws_bias_mps": float(group["ws_error"].mean()),
                     "ws_mae_mps": float(group["abs_ws_error"].mean()),
-                    "ws_rmse_mps": float(np.sqrt(np.mean(group["ws_error"] ** 2))),
+                    "ws_rmse_mps": compute_rmse(group["ws_error"]),
                     "power_bias_mw": float(group["power_error_mw"].mean()),
                     "power_mae_mw": float(group["abs_power_error_mw"].mean()),
-                    "power_rmse_mw": float(np.sqrt(np.mean(group["power_error_mw"] ** 2))),
+                    "power_rmse_mw": compute_rmse(group["power_error_mw"]),
                     "corr_ws_vs_power_error": float(group["ws_error"].corr(group["power_error_mw"])) if len(group) > 1 else np.nan,
                 }
             )
@@ -415,7 +424,9 @@ def select_case_studies(df: pd.DataFrame, pairs: list[PairSpec]) -> pd.DataFrame
         # removes a large share of the corresponding power error.
         score=work["met_power_err"].abs() - work["strict_power_err"].abs() + work["met_ws_err"].abs()
     ).sort_values("score", ascending=False).iloc[0]
-    small_ws_threshold = work["strict_ws_err"].abs().quantile(0.25)
+    # Use the lower quartile so the "residual mismatch" case is drawn from timestamps
+    # where wind-speed mismatch is relatively small within the main sample.
+    small_ws_threshold = work["strict_ws_err"].abs().quantile(RESIDUAL_CASE_WS_ERROR_QUANTILE)
     residual_pool = work[work["strict_ws_err"].abs() <= small_ws_threshold].copy()
     if residual_pool.empty:
         residual_pool = work.copy()
@@ -487,7 +498,7 @@ def scatter_panel(ax: plt.Axes, x: pd.Series, y: pd.Series, title: str) -> None:
     ax.text(
         0.02,
         0.98,
-        f"n={len(finite)}\nBias={err.mean():.2f} m/s\nRMSE={math.sqrt(np.mean(err**2)):.2f} m/s\nr={corr:.3f}",
+        f"n={len(finite)}\nBias={err.mean():.2f} m/s\nRMSE={compute_rmse(err):.2f} m/s\nr={corr:.3f}",
         transform=ax.transAxes,
         va="top",
         ha="left",
