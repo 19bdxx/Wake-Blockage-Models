@@ -33,6 +33,7 @@ WIND_SPEED_BINS = [0, 3, 5, 7, 9, 11, 13, np.inf]
 WIND_SPEED_LABELS = ["0-3", "3-5", "5-7", "7-9", "9-11", "11-13", "13+"]
 WIND_DIRECTION_BINS = np.arange(0, 361, 30)
 WIND_DIRECTION_LABELS = [f"{int(WIND_DIRECTION_BINS[i])}-{int(WIND_DIRECTION_BINS[i + 1])}" for i in range(len(WIND_DIRECTION_BINS) - 1)]
+GOOD_MATCH_POWER_SCALE_MW = 20.0
 
 
 @dataclass(frozen=True)
@@ -404,10 +405,18 @@ def select_case_studies(df: pd.DataFrame, pairs: list[PairSpec]) -> pd.DataFrame
     work["strict_power_err"] = work[strict_pair.power_col] / 1000.0 - work["actual_power_mw"]
     work["robust_power_err"] = work[robust_pair.power_col] / 1000.0 - work["actual_power_mw"]
 
-    input_case = work.assign(score=work["met_power_err"].abs() - work["strict_power_err"].abs() + work["met_ws_err"].abs()).sort_values("score", ascending=False).iloc[0]
+    input_case = work.assign(
+        # Favor windows where raw-input error is large and the Chapter 4 best pair
+        # removes a large share of the corresponding power error.
+        score=work["met_power_err"].abs() - work["strict_power_err"].abs() + work["met_ws_err"].abs()
+    ).sort_values("score", ascending=False).iloc[0]
     small_ws_threshold = work["strict_ws_err"].abs().quantile(0.25)
     residual_case = work[work["strict_ws_err"].abs() <= small_ws_threshold].assign(score=lambda d: d["strict_power_err"].abs()).sort_values("score", ascending=False).iloc[0]
-    good_case = work.assign(score=work["strict_ws_err"].abs() + work["strict_power_err"].abs() / 20.0).sort_values("score", ascending=True).iloc[0]
+    good_case = work.assign(
+        # Convert MW residuals to a comparable screening scale so “good match” prefers
+        # timestamps with both small wind-speed mismatch and small power mismatch.
+        score=work["strict_ws_err"].abs() + work["strict_power_err"].abs() / GOOD_MATCH_POWER_SCALE_MW
+    ).sort_values("score", ascending=True).iloc[0]
 
     rows = [
         {
