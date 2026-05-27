@@ -93,9 +93,9 @@
 
 - **Case summary CSV:** `comparison_results/wind_speed_diagnostics/case_studies.csv`
 - **Case figure:** `comparison_results/wind_speed_diagnostics/figures/06_case_studies.png`
-- **Case 1 – input-bias-dominant:** `2024-03-29 20:45`. Meteorological wind-speed error is 4.948 m/s and meteorological power error is 89.962 MW; the Chapter 4 strict-best pair reduces the power error to 34.568 MW.
-- **Case 2 – residual mismatch:** `2024-07-19 10:15`. The Chapter 4 strict-best pair has only 0.211 m/s wind-speed error but still 100.085 MW power error.
-- **Case 3 – good match:** `2024-04-18 12:30`. The Chapter 4 strict-best pair simultaneously keeps wind-speed and power errors close to zero.
+- **Case 1 – input-bias-dominant:** `2024-03-29 20:45:00`. Meteorological wind-speed error is 4.948 m/s and meteorological power error is 89.962 MW; the Chapter 4 strict-best pair reduces the power error to 34.568 MW.
+- **Case 2 – residual mismatch:** `2024-07-19 10:15:00`. The Chapter 4 strict-best pair has only 0.211 m/s wind-speed error but still 100.085 MW power error.
+- **Case 3 – good match:** `2024-04-18 12:30:00`. The Chapter 4 strict-best pair simultaneously keeps wind-speed and power errors close to zero.
 - **Direct conclusion:** the case studies support a mixed diagnosis: some bad power predictions are input-wind problems, while others remain after wind-speed alignment improves.
 
 ## 8. Implications for Chapter 4 Results

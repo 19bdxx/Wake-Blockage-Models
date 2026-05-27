@@ -33,6 +33,8 @@ WIND_SPEED_BINS = [0, 3, 5, 7, 9, 11, 13, np.inf]
 WIND_SPEED_LABELS = ["0-3", "3-5", "5-7", "7-9", "9-11", "11-13", "13+"]
 WIND_DIRECTION_BINS = np.arange(0, 361, 30)
 WIND_DIRECTION_LABELS = [f"{WIND_DIRECTION_BINS[i]}-{WIND_DIRECTION_BINS[i + 1]}" for i in range(len(WIND_DIRECTION_BINS) - 1)]
+# 20 MW keeps the “good match” case score on the same rough scale as m/s wind-speed
+# error, so the selector prefers timestamps that are jointly small in both dimensions.
 GOOD_MATCH_POWER_SCALE_MW = 20.0
 
 
@@ -306,33 +308,36 @@ def compute_relationship_summary(df: pd.DataFrame, pairs: list[PairSpec]) -> pd.
                 "mean_abs_power_error_mw": np.nan,
             }
         )
-        sub["abs_ws_error_quintile"] = pd.qcut(sub["abs_ws_error"], q=5, labels=["Q1", "Q2", "Q3", "Q4", "Q5"], duplicates="drop")
-        for quintile, q_group in sub.groupby("abs_ws_error_quintile", observed=False):
-            if pd.isna(quintile):
-                continue
-            rows.append(
-                {
-                    "summary_level": "abs_ws_error_quintile",
-                    "pair_key": pair.pair_key,
-                    "pair_label": pair.pair_label,
-                    "source_role": pair.source_role,
-                    "ws_col": pair.ws_col,
-                    "power_col": pair.power_col,
-                    "n": int(len(q_group)),
-                    "ws_bias_mps": float(q_group["ws_error"].mean()),
-                    "ws_mae_mps": float(q_group["abs_ws_error"].mean()),
-                    "ws_rmse_mps": float(np.sqrt(np.mean(q_group["ws_error"] ** 2))),
-                    "power_bias_mw": float(q_group["power_error_mw"].mean()),
-                    "power_mae_mw": float(q_group["abs_power_error_mw"].mean()),
-                    "power_rmse_mw": float(np.sqrt(np.mean(q_group["power_error_mw"] ** 2))),
-                    "corr_signed": float(q_group["ws_error"].corr(q_group["power_error_mw"])) if len(q_group) > 1 else np.nan,
-                    "corr_abs": float(q_group["abs_ws_error"].corr(q_group["abs_power_error_mw"])) if len(q_group) > 1 else np.nan,
-                    "same_sign_ratio": float((((q_group["ws_error"] >= 0) & (q_group["power_error_mw"] >= 0)) | ((q_group["ws_error"] < 0) & (q_group["power_error_mw"] < 0))).mean()),
-                    "bin_or_group": str(quintile),
-                    "mean_abs_ws_error_mps": float(q_group["abs_ws_error"].mean()),
-                    "mean_abs_power_error_mw": float(q_group["abs_power_error_mw"].mean()),
-                }
-            )
+        q_bin_count = min(5, int(sub["abs_ws_error"].nunique()))
+        if q_bin_count >= 2:
+            q_labels = [f"Q{i + 1}" for i in range(q_bin_count)]
+            sub["abs_ws_error_quintile"] = pd.qcut(sub["abs_ws_error"], q=q_bin_count, labels=q_labels, duplicates="drop")
+            for quintile, q_group in sub.groupby("abs_ws_error_quintile", observed=False):
+                if pd.isna(quintile):
+                    continue
+                rows.append(
+                    {
+                        "summary_level": "abs_ws_error_quintile",
+                        "pair_key": pair.pair_key,
+                        "pair_label": pair.pair_label,
+                        "source_role": pair.source_role,
+                        "ws_col": pair.ws_col,
+                        "power_col": pair.power_col,
+                        "n": int(len(q_group)),
+                        "ws_bias_mps": float(q_group["ws_error"].mean()),
+                        "ws_mae_mps": float(q_group["abs_ws_error"].mean()),
+                        "ws_rmse_mps": float(np.sqrt(np.mean(q_group["ws_error"] ** 2))),
+                        "power_bias_mw": float(q_group["power_error_mw"].mean()),
+                        "power_mae_mw": float(q_group["abs_power_error_mw"].mean()),
+                        "power_rmse_mw": float(np.sqrt(np.mean(q_group["power_error_mw"] ** 2))),
+                        "corr_signed": float(q_group["ws_error"].corr(q_group["power_error_mw"])) if len(q_group) > 1 else np.nan,
+                        "corr_abs": float(q_group["abs_ws_error"].corr(q_group["abs_power_error_mw"])) if len(q_group) > 1 else np.nan,
+                        "same_sign_ratio": float((((q_group["ws_error"] >= 0) & (q_group["power_error_mw"] >= 0)) | ((q_group["ws_error"] < 0) & (q_group["power_error_mw"] < 0))).mean()),
+                        "bin_or_group": str(quintile),
+                        "mean_abs_ws_error_mps": float(q_group["abs_ws_error"].mean()),
+                        "mean_abs_power_error_mw": float(q_group["abs_power_error_mw"].mean()),
+                    }
+                )
     out = pd.DataFrame(rows)
     out.to_csv(OUT_DIR / "wind_speed_error_power_error_relationship.csv", index=False, encoding="utf-8-sig")
     return out
@@ -411,11 +416,14 @@ def select_case_studies(df: pd.DataFrame, pairs: list[PairSpec]) -> pd.DataFrame
         score=work["met_power_err"].abs() - work["strict_power_err"].abs() + work["met_ws_err"].abs()
     ).sort_values("score", ascending=False).iloc[0]
     small_ws_threshold = work["strict_ws_err"].abs().quantile(0.25)
-    residual_case = work[work["strict_ws_err"].abs() <= small_ws_threshold].assign(score=lambda d: d["strict_power_err"].abs()).sort_values("score", ascending=False).iloc[0]
+    residual_pool = work[work["strict_ws_err"].abs() <= small_ws_threshold].copy()
+    if residual_pool.empty:
+        residual_pool = work.copy()
+    residual_case = residual_pool.assign(score=lambda d: d["strict_power_err"].abs()).sort_values("score", ascending=False).iloc[0]
     good_case = work.assign(
         # Convert MW residuals to a comparable screening scale so “good match” prefers
         # timestamps with both small wind-speed mismatch and small power mismatch.
-        score=work["strict_ws_err"].abs() + work["strict_power_err"].abs() / GOOD_MATCH_POWER_SCALE_MW
+        score=work["strict_ws_err"].abs() + (work["strict_power_err"].abs() / GOOD_MATCH_POWER_SCALE_MW)
     ).sort_values("score", ascending=True).iloc[0]
 
     rows = [
@@ -788,7 +796,9 @@ def main() -> None:
     available_df = build_available_variables_table(common_df)
     summary_df = compute_wind_speed_summary(common_df)
 
-    main_focus = common_df[common_df["enable_blockage"] & common_df["actual_power_mw"].notna() & (~common_df["is_curtailed"].fillna(False))].copy()
+    main_focus = common_df.loc[
+        common_df["enable_blockage"] & common_df["actual_power_mw"].notna() & (~common_df["is_curtailed"].fillna(False))
+    ].copy()
     main_focus["measured_ws_bin"] = pd.cut(main_focus["measured_ws"], bins=WIND_SPEED_BINS, labels=WIND_SPEED_LABELS, right=False, include_lowest=True)
     main_focus["wind_direction_bin"] = pd.cut(main_focus["wind_direction"] % 360.0, bins=WIND_DIRECTION_BINS, labels=WIND_DIRECTION_LABELS, right=False, include_lowest=True)
 
