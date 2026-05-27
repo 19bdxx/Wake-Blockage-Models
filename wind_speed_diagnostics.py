@@ -457,6 +457,8 @@ def select_case_studies(df: pd.DataFrame, pairs: list[PairSpec]) -> pd.DataFrame
         },
     ]
     out = pd.DataFrame(rows)
+    numeric_cols = out.select_dtypes(include=[np.number]).columns
+    out[numeric_cols] = out[numeric_cols].round(3)
     out.to_csv(OUT_DIR / "case_studies.csv", index=False, encoding="utf-8-sig")
     return out
 
@@ -741,9 +743,9 @@ def build_report(
 
 - **Case summary CSV:** `comparison_results/wind_speed_diagnostics/case_studies.csv`
 - **Case figure:** `comparison_results/wind_speed_diagnostics/figures/06_case_studies.png`
-- **Case 1 – input-bias-dominant:** `{pd.to_datetime(cases_df.iloc[0]["center_time"]).strftime("%Y-%m-%d %H:%M")}`. Meteorological wind-speed error is {fmt(float(cases_df.iloc[0]["met_ws_error_mps"]), 3)} m/s and meteorological power error is {fmt(float(cases_df.iloc[0]["met_power_error_mw"]), 3)} MW; the Chapter 4 strict-best pair reduces the power error to {fmt(float(cases_df.iloc[0]["strict_power_error_mw"]), 3)} MW.
-- **Case 2 – residual mismatch:** `{pd.to_datetime(cases_df.iloc[1]["center_time"]).strftime("%Y-%m-%d %H:%M")}`. The Chapter 4 strict-best pair has only {fmt(float(cases_df.iloc[1]["strict_ws_error_mps"]), 3)} m/s wind-speed error but still {fmt(float(cases_df.iloc[1]["strict_power_error_mw"]), 3)} MW power error.
-- **Case 3 – good match:** `{pd.to_datetime(cases_df.iloc[2]["center_time"]).strftime("%Y-%m-%d %H:%M")}`. The Chapter 4 strict-best pair simultaneously keeps wind-speed and power errors close to zero.
+- **Case 1 – input-bias-dominant:** `{pd.to_datetime(cases_df.iloc[0]["center_time"]).strftime("%Y-%m-%d %H:%M:%S")}`. Meteorological wind-speed error is {fmt(float(cases_df.iloc[0]["met_ws_error_mps"]), 3)} m/s and meteorological power error is {fmt(float(cases_df.iloc[0]["met_power_error_mw"]), 3)} MW; the Chapter 4 strict-best pair reduces the power error to {fmt(float(cases_df.iloc[0]["strict_power_error_mw"]), 3)} MW.
+- **Case 2 – residual mismatch:** `{pd.to_datetime(cases_df.iloc[1]["center_time"]).strftime("%Y-%m-%d %H:%M:%S")}`. The Chapter 4 strict-best pair has only {fmt(float(cases_df.iloc[1]["strict_ws_error_mps"]), 3)} m/s wind-speed error but still {fmt(float(cases_df.iloc[1]["strict_power_error_mw"]), 3)} MW power error.
+- **Case 3 – good match:** `{pd.to_datetime(cases_df.iloc[2]["center_time"]).strftime("%Y-%m-%d %H:%M:%S")}`. The Chapter 4 strict-best pair simultaneously keeps wind-speed and power errors close to zero.
 - **Direct conclusion:** the case studies support a mixed diagnosis: some bad power predictions are input-wind problems, while others remain after wind-speed alignment improves.
 
 ## 8. Implications for Chapter 4 Results
@@ -786,7 +788,7 @@ def main() -> None:
     available_df = build_available_variables_table(common_df)
     summary_df = compute_wind_speed_summary(common_df)
 
-    main_focus = common_df[(common_df["enable_blockage"] == True) & common_df["actual_power_mw"].notna() & (~common_df["is_curtailed"].fillna(False))].copy()
+    main_focus = common_df[common_df["enable_blockage"] & common_df["actual_power_mw"].notna() & (~common_df["is_curtailed"].fillna(False))].copy()
     main_focus["measured_ws_bin"] = pd.cut(main_focus["measured_ws"], bins=WIND_SPEED_BINS, labels=WIND_SPEED_LABELS, right=False, include_lowest=True)
     main_focus["wind_direction_bin"] = pd.cut(main_focus["wind_direction"] % 360.0, bins=WIND_DIRECTION_BINS, labels=WIND_DIRECTION_LABELS, right=False, include_lowest=True)
 
